@@ -1,0 +1,65 @@
+# 训练配置
+
+# 继承默认配置
+extends: "default.yaml"
+
+# 训练超参数
+training:
+  # 论文要求的参数
+  prediction_horizon: 12  # T: 预测动作序列长度
+  execution_horizon: 8    # N: 执行的前N步
+  num_epochs: 500         # 总训练轮数（论文要求）
+  eval_interval: 50       # 每50 epochs评估一次（论文要求）
+  eval_episodes: 20       # 评估20 episodes（论文要求）
+
+  # Flow Matching 配置（项目改进）
+  flow_matching:
+    num_training_steps: 50000  # 约等于500 epochs
+    batch_size: 32
+    learning_rate: 1.0e-4
+    weight_decay: 0.01
+    warmup_steps: 1000
+    scheduler: "cosine"
+
+    # 噪声调度
+    noise_schedule: "uniform"  # uniform or sigmoid
+
+  # 优化器配置
+  optimizer:
+    name: "AdamW"
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+  # 混合精度训练
+  mixed_precision:
+    enabled: true
+    dtype: "float16"  # bfloat16 or float16
+
+  # 鲁棒微调配置（可选）
+  robust_finetuning:
+    enabled: false
+    num_training_steps: 10000
+    learning_rate: 1.0e-5
+    noise_level: 0.1
+    trajectory_align_loss_weight: 0.1
+
+# 数据加载配置
+dataloader:
+  num_workers: 4
+  pin_memory: true
+  prefetch_factor: 2
+  drop_last: true
+  shuffle: true
+
+# 验证配置
+validation:
+  enabled: true
+  val_interval: 500
+  val_steps: 100
+  tasks: ["stack_blocks", "put_item_in_drawer", "open_drawer"]
+
+# 检查点配置
+checkpointing:
+  save_total_limit: 5
+  resume_from: null
+  load_best: false

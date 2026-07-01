@@ -1,0 +1,65 @@
+# 部署/推理配置
+
+# 继承默认配置
+extends: "default.yaml"
+
+# 推理配置
+inference:
+  # 模型路径
+  vlm_checkpoint: "weights/vlm_model"
+  flow_tdp_checkpoint: "weights/flow_tdp_model.safetensors"
+
+  # 推理超参数
+  num_inference_steps: 1  # Flow Matching只需1步
+  temperature: 1.0
+  guidance_scale: 1.0
+
+  # 推理性能
+  batch_inference: false  # 单步推理不需要batch
+  enable_torch_compile: true
+
+# 闭环推理配置
+closed_loop_inference:
+  max_steps_per_subtask: 50  # 每个子任务最大步数
+  max_total_steps: 500  # 任务总最大步数
+  early_stop_on_success: true
+
+  # 可视化
+  save_debug_images: true
+  save_debug_video: false
+  debug_dir: "debug"
+
+# 任务配置
+tasks:
+  # 长时序组合任务示例
+  long_horizon_tasks:
+    - name: "clean_table"
+      description: "Clean the table by stacking all blocks and putting trash in the drawer"
+      subtasks:
+        - "pick up all blocks and stack them in the center"
+        - "open the drawer"
+        - "put all trash items in the drawer"
+        - "close the drawer"
+
+    - name: "organize_desk"
+      description: "Organize the desk by placing items properly"
+      subtasks:
+        - "pick up the red block"
+        - "place red block on the target location"
+        - "pick up the blue cube"
+        - "place blue cube on the target location"
+        - "close the drawer"
+
+# RLBench环境配置
+rlbench:
+  headless: true
+  random_seed: 42
+  obs_config:
+    image_width: 800
+    image_height: 600
+  # 论文中的相机配置
+  cam_config:
+    - camera_name: "front"    # 前视图相机（单视图任务）
+      camera_pose: [0, 0, 1, 0, 0, 0]
+    - camera_name: "wrist"    # 手腕视图相机（长时序任务使用）
+      camera_pose: [0, 0, 0.5, 0, 0, 0]

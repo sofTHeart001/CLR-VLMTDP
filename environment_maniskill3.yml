@@ -1,0 +1,48 @@
+name: clr_vlmtdp_maniskill3
+channels:
+  - conda-forge
+  - pytorch
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch=2.1.0
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=11.8
+  - pip
+
+  # ManiSkill3系统依赖（Windows需要这些）
+  - vs2019_runtime  # Visual C++运行时
+  - vc  # Visual C++编译器
+
+  - pip:
+    # ManiSkill3（最新版）
+    - mani-skill>=3.0.0b22
+    - sapien>=2.5.0
+
+    # 深度学习
+    - transformers>=4.30.0
+    - accelerate>=0.20.0
+    - bitsandbytes>=0.41.0
+    - diffusers>=0.19.0
+
+    # 科学计算
+    - numpy>=1.24.0
+    - scipy>=1.10.0
+    - matplotlib>=3.7.0
+    - einops>=0.6.0
+
+    # 图像处理
+    - opencv-python>=4.7.0
+    - pillow>=9.5.0
+
+    # 工具库
+    - pyyaml>=6.0
+    - tqdm>=4.65.0
+    - tensorboard>=2.13.0
+    - wandb>=0.15.0
+
+    # 游戏/仿真相关
+    - gymnasium>=0.28.0
+    - gym-robotics>=0.23.0
+    - pybullet>=3.2.5

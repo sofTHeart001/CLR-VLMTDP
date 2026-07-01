@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(python *)",
+      "Bash(pip --version)",
+      "WebSearch",
+      "Bash(conda env *)",
+      "Bash(conda create *)",
+      "Bash(conda activate *)",
+      "Bash(D:Anacondaenvsclr_vlmtdp_maniskill3python.exe *)",
+      "Bash(/D/Anaconda/envs/clr_vlmtdp_maniskill3/python.exe *)",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ]
+  }
+}

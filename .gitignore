@@ -1,0 +1,78 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyTorch
+*.pth
+*.pt
+*.safetensors
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+env/
+venv/
+ENV/
+
+# Cache
+.cache/
+cache/
+*.log
+logs/
+
+# Data
+data/rlbench/
+data/raw/
+data/processed/
+
+# Weights (keep structure but ignore large files)
+weights/*.pt
+weights/*.pth
+weights/*.safetensors
+weights/checkpoints/*.pt
+weights/checkpoints/*.pth
+
+# Results
+results/
+debug/
+outputs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Wandb
+wandb/
+
+# Hugging Face
+.huggingface/
+
+# Temporary files
+*.tmp
+*.temp

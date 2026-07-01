@@ -1,0 +1,63 @@
+# 全局配置文件
+# CLosed-loop Robust Vision-Language Model guided Trajectory Diffusion Policy
+
+project_name: "CLR-VLMTDP"
+version: "v1.0"
+
+# 路径配置
+paths:
+  data_dir: "data"
+  weights_dir: "weights"
+  checkpoint_dir: "weights/checkpoints"
+  log_dir: "logs"
+  cache_dir: "cache"
+
+# 设备配置
+device:
+  device: "cuda"
+  gpu_id: 0
+  num_workers: 4
+
+# VLM配置
+vlm:
+  model_name: "meta-llama/Llama-2-7b-chat-hf"  # 或其他本地VLM模型
+  load_in_4bit: true  # 4-bit量化以节省显存
+  cache_dir: "cache/vlm"
+  max_new_tokens: 512
+
+# 图像配置
+image:
+  height: 600
+  width: 800
+  channels: 3
+
+# 体素配置
+voxel:
+  size: 6  # 6x6x6
+  feature_dim: 128
+
+# 机器人配置
+robot:
+  num_joints: 7
+  action_dim: 7
+  gripper_dim: 1
+
+# 闭环控制配置
+closed_loop:
+  check_interval: 5  # 每5步检查一次
+  deviation_threshold: 0.15  # 偏差阈值
+  max_replan_attempts: 3  # 最大重规划次数
+
+# 数据集配置
+dataset:
+  name: "rlbench"
+  tasks: []  # 空列表表示所有任务
+  num_demos_per_task: 100
+  train_split: 0.8
+
+# 日志配置
+logging:
+  wandb_project: "clr-vlmtdp"
+  wandb_entity: null
+  log_every: 10
+  save_every: 1000
