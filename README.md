@@ -300,7 +300,9 @@ A:
 
 ---
 
-## 📚 参考文献
+## 📚 参考文献 & 路线图
+
+- **`ROADMAP.md`** — 详细实施路线图：当前状态盘点、下一步任务清单（按 P0-P4）、每个实验的详细规格、设计决策记录、风险与降级方案、4 周时间表。**所有未来工作以本文档为参考**。
 
 - [VLM-TDP Paper (arXiv 2507.04524)](https://arxiv.org/abs/2507.04524)
 - [Flow Matching for Generative Modeling (Lipman et al. 2022)](https://arxiv.org/abs/2210.02747)
