@@ -20,10 +20,19 @@ device:
 
 # VLM配置
 vlm:
-  model_name: "meta-llama/Llama-2-7b-chat-hf"  # 或其他本地VLM模型
-  load_in_4bit: true  # 4-bit量化以节省显存
-  cache_dir: "cache/vlm"
+  # 后端选择：openai（默认，OpenAI 兼容 HTTP API）或 local（离线 LLaVA 占位）
+  backend: "openai"
+  api_key: "${OPENAI_API_KEY}"     # 构造时从环境变量读取
+  base_url: "https://api.openai.com/v1"
+  model: "gpt-4o-mini"             # 切换更强模型：gpt-4o, gpt-4-vision-preview
+  image_max_side: 512              # 上传前最长边缩放，省 token
+  temperature: 0.0
+  timeout: 30
+  max_retries: 2
   max_new_tokens: 512
+  # 兼容 LocalLLaVAWrapper 的旧字段（backend=local 时使用）
+  load_in_4bit: true
+  cache_dir: "cache/vlm"
 
 # 图像配置
 image:

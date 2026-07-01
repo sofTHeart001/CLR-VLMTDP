@@ -38,6 +38,7 @@ wheels/
 # Environment
 env/
 venv/
+.venv/
 ENV/
 
 # Cache
@@ -58,10 +59,21 @@ weights/*.safetensors
 weights/checkpoints/*.pt
 weights/checkpoints/*.pth
 
-# Results
-results/
+# Results (keep experiment JSON + figures, ignore other outputs)
+results/*.tmp
+results/*.log
 debug/
 outputs/
+
+# Temporary analysis files
+paper_text.txt
+
+# Documentation (hide except README)
+*_project*.md
+CODE_VERIFICATION.md
+INSTALL_*.md
+PAPER_*.md
+*.中文名称*.md
 
 # OS
 .DS_Store

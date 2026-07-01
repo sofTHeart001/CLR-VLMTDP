@@ -1,6 +1,11 @@
 """
 Light Voxel Encoder Module
 使用深度可分离3D卷积实现轻量级体素编码器
+
+与原版相比已清理：
+- 删除未使用的 input_proj（forward 路径里没引用）
+- 删除未使用的 positional_encoding buffer（_create_positional_encoding 三重 for 循环也是死代码）
+- get_parameter_count 现在与同文件的 StandardVoxelEncoder 真实对比计算 reduction%
 """
 
 import torch
@@ -76,9 +81,6 @@ class LightVoxelEncoder(nn.Module):
         self.voxel_size = voxel_size
         self.feature_dim = feature_dim
 
-        # 输入投影层：将体素转换为3D张量格式 (B, 1, 6, 6, 6)
-        self.input_proj = nn.Linear(voxel_size, 1)
-
         # 编码器层：使用深度可分离卷积
         encoder_layers = []
 
@@ -103,39 +105,6 @@ class LightVoxelEncoder(nn.Module):
             nn.Dropout(0.1)
         )
 
-        # 位置编码（可选）
-        self.register_buffer(
-            "positional_encoding",
-            self._create_positional_encoding(voxel_size, feature_dim)
-        )
-
-    def _create_positional_encoding(
-        self,
-        size: int,
-        dim: int
-    ) -> torch.Tensor:
-        """
-        创建可学习的位置编码
-
-        Args:
-            size: 体素大小
-            dim: 特征维度
-
-        Returns:
-            位置编码张量 (size, size, size, dim)
-        """
-        pe = torch.zeros(size, size, size, dim)
-        for i in range(size):
-            for j in range(size):
-                for k in range(size):
-                    # 使用空间坐标创建简单的位置编码
-                    pe[i, j, k] = torch.sin(torch.tensor([
-                        i / size * 2 * torch.pi,
-                        j / size * 2 * torch.pi,
-                        k / size * 2 * torch.pi
-                    ])).repeat((dim // 3 + 1))[:dim]
-        return pe
-
     def forward(
         self,
         voxel_trajectory: torch.Tensor,
@@ -151,8 +120,6 @@ class LightVoxelEncoder(nn.Module):
         Returns:
             features: 轨迹特征向量 (B, feature_dim)
         """
-        batch_size = voxel_trajectory.shape[0]
-
         # 转换为3D格式: (B, C, D, H, W)
         x = voxel_trajectory.unsqueeze(1)  # (B, 1, 6, 6, 6)
 
@@ -162,27 +129,39 @@ class LightVoxelEncoder(nn.Module):
         # 特征提取
         features = self.feature_extractor(x)  # (B, feature_dim)
 
-        # 添加位置编码（简化处理）
-        # 实际应用中可以根据体素值加权平均位置编码
-
         if return_intermediate:
             return features, x
         return features
 
-    def get_parameter_count(self) -> Dict[str, int]:
+    def get_parameter_count(
+        self,
+        baseline: Optional[nn.Module] = None
+    ) -> Dict[str, float]:
         """
-        统计模型参数量
+        统计模型参数量，并与 StandardVoxelEncoder 真实对比
+
+        Args:
+            baseline: 对照组编码器；默认构建同尺寸的 StandardVoxelEncoder
 
         Returns:
-            参数量统计字典
+            {
+                "total": 轻量编码器参数量,
+                "baseline_total": 对照组参数量,
+                "reduction_pct": 参数减少百分比,
+            }
         """
-        total_params = sum(p.numel() for p in self.parameters())
-        trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
-
+        if baseline is None:
+            baseline = StandardVoxelEncoder(
+                voxel_size=self.voxel_size,
+                feature_dim=self.feature_dim
+            )
+        total = sum(p.numel() for p in self.parameters())
+        base_total = sum(p.numel() for p in baseline.parameters())
+        reduction_pct = (1.0 - total / base_total) * 100.0 if base_total else 0.0
         return {
-            "total": total_params,
-            "trainable": trainable_params,
-            "reduction": f"{(1 - trainable_params / 200000) * 100:.1f}%"  # 假设标准编码器约200K参数
+            "total": int(total),
+            "baseline_total": int(base_total),
+            "reduction_pct": round(float(reduction_pct), 2),
         }
 
 
@@ -268,5 +247,7 @@ if __name__ == "__main__":
 
     print(f"Light encoder output shape: {light_output.shape}")
     print(f"Standard encoder output shape: {standard_output.shape}")
-    print(f"\nLight encoder parameters: {light_encoder.get_parameter_count()}")
-    print(f"Standard encoder parameters: {sum(p.numel() for p in standard_encoder.parameters())}")
+    print(f"\nParameter comparison:")
+    stats = light_encoder.get_parameter_count(baseline=standard_encoder)
+    for k, v in stats.items():
+        print(f"  {k}: {v}")

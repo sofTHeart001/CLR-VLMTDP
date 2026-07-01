@@ -154,6 +154,11 @@ class FlowTDP(nn.Module):
 
     输出：
         - 机器人动作: (B, action_dim)
+
+    Args:
+        use_voxel: 是否使用体素轨迹作为条件输入。
+          - True (默认): 等价于论文 TDP，使用 6×6×6 voxel 编码作为额外条件
+          - False: 退化为 baseline diffusion policy（仅图像条件），用于消融实验
     """
 
     def __init__(
@@ -165,12 +170,14 @@ class FlowTDP(nn.Module):
         hidden_dim: int = 256,
         num_layers: int = 6,
         num_heads: int = 8,
-        dropout: float = 0.1
+        dropout: float = 0.1,
+        use_voxel: bool = True,
     ):
         super().__init__()
 
         self.action_dim = action_dim
         self.hidden_dim = hidden_dim
+        self.use_voxel = use_voxel
 
         # 图像编码器
         self.image_encoder = nn.Sequential(
@@ -198,7 +205,7 @@ class FlowTDP(nn.Module):
             nn.Dropout(dropout)
         )
 
-        # 轨迹特征投影
+        # 轨迹特征投影（仅在 use_voxel=True 时使用）
         self.trajectory_proj = nn.Sequential(
             nn.Linear(trajectory_dim, hidden_dim),
             nn.ReLU(inplace=True),
@@ -272,8 +279,12 @@ class FlowTDP(nn.Module):
         # 编码图像
         image_features = self.encode_image(image)  # (B, hidden_dim)
 
-        # 投影轨迹特征
-        trajectory_proj = self.trajectory_proj(trajectory_features)  # (B, hidden_dim)
+        # 投影轨迹特征（如果启用）
+        if self.use_voxel:
+            trajectory_proj = self.trajectory_proj(trajectory_features)  # (B, hidden_dim)
+        else:
+            # 不使用 voxel 时, 用零向量代替 condition (保留模块结构)
+            trajectory_proj = torch.zeros_like(image_features)
 
         # 时间编码
         time_embed = self.time_embedding(timestep)  # (B, hidden_dim)
@@ -307,32 +318,39 @@ class FlowTDP(nn.Module):
         guidance_scale: float = 1.0
     ) -> torch.Tensor:
         """
-        Flow Matching采样（单步推理）
+        Flow Matching采样（Euler 积分）
+
+        从 t=1 的高斯噪声出发，沿速度场反向 Euler 积分到 t=0，得到动作。
 
         Args:
             image: (B, C, H, W)
             trajectory_features: (B, trajectory_dim)
-            num_steps: 推理步数（Flow Matching通常只需1步）
-            guidance_scale: 分类器自由引导强度
+            num_steps: Euler 步数（论文默认 1 步即可）
+            guidance_scale: CFG 强度（当前实现为占位，恒为 1.0）
 
         Returns:
             action: (B, action_dim)
         """
+        if num_steps < 1:
+            raise ValueError(f"num_steps must be >= 1, got {num_steps}")
+
         batch_size = image.shape[0]
         device = image.device
 
-        # Flow Matching从t=1采样到t=0
-        timestep = torch.zeros(batch_size, device=device)
+        # 从 x_1 ~ N(0, I) 出发
+        x = torch.randn(batch_size, self.action_dim, device=device)
+        dt = 1.0 / num_steps
 
         with torch.no_grad():
-            output = self.forward(image, trajectory_features, timestep, mode="velocity")
+            for k in range(num_steps, 0, -1):
+                t = torch.full((batch_size,), k * dt, device=device)
+                v = self.forward(
+                    image, trajectory_features, t, mode="velocity"
+                )["velocity"]
+                # x_{t - dt} = x_t - v(x_t, t) * dt
+                x = x - v * dt * guidance_scale
 
-            # 应用速度场（Flow Matching）
-            # action = action - velocity * dt
-            dt = 1.0 / num_steps
-            action = output["action"] - output["velocity"] * dt * guidance_scale
-
-        return action
+        return x
 
     def compute_flow_matching_loss(
         self,
@@ -368,10 +386,9 @@ class FlowTDP(nn.Module):
         # 最优速度场
         optimal_velocity = noise - action
 
-        # 预测速度场
-        with torch.autocast(device_type="cuda", dtype=torch.float16):
-            output = self.forward(image, trajectory_features, timestep, mode="velocity")
-            predicted_velocity = output["velocity"]
+        # 预测速度场（fp32；fp16 autocast 在某些 GPU 上会触发 dtype 不匹配, 故默认关闭）
+        output = self.forward(image, trajectory_features, timestep, mode="velocity")
+        predicted_velocity = output["velocity"]
 
         # MSE损失
         loss = F.mse_loss(predicted_velocity, optimal_velocity)
@@ -379,12 +396,13 @@ class FlowTDP(nn.Module):
         return loss
 
 
-def create_flow_tdp(config: Dict) -> FlowTDP:
+def create_flow_tdp(config: Dict, use_voxel: bool = True) -> FlowTDP:
     """
     工厂函数：根据配置创建FlowTDP模型
 
     Args:
         config: 配置字典
+        use_voxel: 是否使用体素轨迹条件（消融实验时设为 False）
 
     Returns:
         FlowTDP实例
@@ -401,7 +419,8 @@ def create_flow_tdp(config: Dict) -> FlowTDP:
         hidden_dim=256,
         num_layers=6,
         num_heads=8,
-        dropout=0.1
+        dropout=0.1,
+        use_voxel=use_voxel,
     )
 
 

@@ -25,11 +25,51 @@ except ImportError:
     print("Warning: RLBench not available. Using mock environment.")
 
 
-def load_config(config_path: str) -> dict:
-    """加载配置文件"""
+def _deep_merge(base: dict, override: dict) -> dict:
+    """递归合并：override 覆盖 base；dict 类型继续递归，其他类型直接替换。"""
+    merged = dict(base)
+    for k, v in override.items():
+        if (
+            k in merged
+            and isinstance(merged[k], dict)
+            and isinstance(v, dict)
+        ):
+            merged[k] = _deep_merge(merged[k], v)
+        else:
+            merged[k] = v
+    return merged
+
+
+def load_config(config_path: str, _seen: Optional[set] = None) -> dict:
+    """
+    加载 YAML 配置，支持 `extends:` 字段递归继承。
+
+    Args:
+        config_path: 配置文件路径
+        _seen: 内部防循环集合（外部调用无需传入）
+
+    Returns:
+        合并后的配置字典
+    """
+    config_path = Path(config_path)
+    if _seen is None:
+        _seen = set()
+    real = config_path.resolve()
+    if real in _seen:
+        raise ValueError(f"Circular extends detected: {real}")
+    _seen = _seen | {real}
+
     with open(config_path, 'r', encoding='utf-8') as f:
-        config = yaml.safe_load(f)
-    return config
+        cfg = yaml.safe_load(f) or {}
+
+    base_ref = cfg.pop("extends", None)
+    if base_ref:
+        base_path = Path(base_ref)
+        if not base_path.is_absolute():
+            base_path = (config_path.parent / base_path).resolve()
+        base_cfg = load_config(str(base_path), _seen=_seen)
+        return _deep_merge(base_cfg, cfg)
+    return cfg
 
 
 class ClosedLoopController:
