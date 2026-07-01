@@ -1,0 +1,23 @@
+{
+  "with_voxel": {
+    "final_loss": 1.007422343492508,
+    "train_time_s": 348.3366780281067,
+    "mse": 1.281372106075287,
+    "inference_ms_mean": 13.322019577026367,
+    "inference_ms_std": 0.9267832031184813,
+    "num_evaluated": 5
+  },
+  "without_voxel": {
+    "final_loss": 1.0085071265697478,
+    "train_time_s": 342.2452940940857,
+    "mse": 1.2356847524642944,
+    "inference_ms_mean": 12.765693664550781,
+    "inference_ms_std": 0.42616933607461366,
+    "num_evaluated": 5
+  },
+  "summary": {
+    "delta_loss": 0.0010847830772398037,
+    "delta_mse": -0.04568735361099252,
+    "voxel_helps": false
+  }
+}
