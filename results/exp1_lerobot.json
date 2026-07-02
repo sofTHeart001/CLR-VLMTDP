@@ -1,0 +1,20 @@
+{
+  "with_voxel": {
+    "final_loss": 1.0115251004695893,
+    "train_time_s": 1341.8319611549377,
+    "mse": 0.8146848991513252,
+    "inference_ms_mean": 8.335411548614502,
+    "num_evaluated": 20
+  },
+  "without_voxel": {
+    "final_loss": 1.0132995599508285,
+    "train_time_s": 1811.2681312561035,
+    "mse": 1.1041639933362604,
+    "inference_ms_mean": 13.868296146392822,
+    "num_evaluated": 20
+  },
+  "summary": {
+    "delta_mse": 0.2894790941849351,
+    "voxel_helps": true
+  }
+}
