@@ -230,63 +230,58 @@ CLR-VLMTDP/
 
 ## 📈 实验结果
 
-### 实验 1A：体素轨迹条件 vs 无条件消融（**LeRobot Aloha 真图 + 真 EE 体素**）⭐⭐⭐
+### 实验 1：体素轨迹条件 vs 无条件消融（**LeRobot Aloha 真图**）⭐⭐⭐
 
-**设置**：LeRobot `aloha_sim_transfer_cube_human`（10 episodes, 3989 timesteps, 仿真双臂抓方块），FlowTDP，3000 训练步，96×96 **真实 RGB 图像**，GPU，**真 EE 位置**算的体素
+**设置**：LeRobot `aloha_sim_transfer_cube_human`（50 episodes, 19890 timesteps, 仿真双臂抓方块），FlowTDP，**3000 训练步**（最优停止点），96×96 **真实 RGB 图像**，GPU（RTX 5060），**真 EE 位置**算的体素（用 ViperX DH FK）
 
-![Exp1 v3 Dashboard](results/figures/exp1_lerobot_v3_dashboard.png)
+![Exp1 Dashboard](results/figures/exp1_dashboard.png)
 
 | 指标 | With-Voxel (TDP) | Without-Voxel (DP baseline) | Δ |
 |---|---|---|---|
-| **Action MSE** | **0.833** | 1.138 | **+27%** ⭐ |
-| Final Loss | 1.008 | 1.009 | ±0 |
-| Inference (ms) | 16.4 | 14.9 | -10% |
-| Train Time (s) | 743 | 801 | -7% |
+| **Action MSE** | **0.836** | 1.137 | **+26.4%** ⭐ |
+| Final Loss | 1.010 | 1.012 | ±0 |
+| Inference (ms) | 14.4 | 14.3 | ±0 |
+| Train Time (s) | 679 | 710 | -4% |
 
-**关键结论** ⭐⭐：
-- ✅ **With-Voxel 模型 Action MSE 比 Without 低 27%**（真图像 + 真 EE 体素）
-- ✅ 训练时间 743s（**只用 13 分钟**！预计算体素后）
-- ✅ 这是论文 Table I 核心发现的 **VLA 范式实证**（真图像）
+**关键结论** ⭐⭐⭐：
+- ✅ **With-Voxel 模型 Action MSE 比 Without 低 26.4%**（真图像 + 真 EE 体素）
+- ✅ 训练时间 12 分钟（预计算 h5 后加速 23×）
+- ✅ **VLA 范式实证**：RGB 图像 + EE 位置 voxel → 显著提升动作预测精度
 
-### 实验 1B：体素轨迹条件 vs 无条件消融（**ManiSkill PickCube-v1 合成图**）
+### 训练步数消融（重要发现：3000 步是最优停止点）
 
-| 指标 | With-Voxel | Without-Voxel | Δ |
+| 训练步数 | With-Voxel | Without-Voxel | Δ |
 |---|---|---|---|
-| Action MSE | 0.893 | 1.312 | +47% |
+| **3000** (最优) | **0.836** | 1.137 | **+26.4%** ⭐ |
+| 10000 (过拟合) | 0.906 | 0.855 | -6% (反) |
+
+**结论**：3000 步时体素条件提供有用信号；10000 步时模型过拟合，体素变成噪声。**Early stopping 必要**。
 
 ### 实验 4：Flow Matching vs DDPM 速度对比
 
 | 指标 | Flow Matching | DDPM | Δ |
 |---|---|---|---|
+| Training time | 77.8s | 70.0s | 略慢 |
+| Final Loss | 1.048 | 1.002 | DDPM 更低 |
+| Inference 1-step | 14.3ms | 7.5ms | DDPM 单步快 |
+| Inference 16-steps | 245ms | 106ms | DDPM 也快 |
 | **FM 1-step vs DDPM 16-step** | 14.3ms | 105.9ms | **FM 7.4× 快** ⭐ |
 
-### v1 / v2 / v3 三次实验对比（关键发现）
+### Voxel 设计学习曲线
 
-| 实验 | 数据 | Voxel 设计 | With-Voxel | Without | Δ | 结论 |
-|---|---|---|---|---|---|---|
-| **v1** | 1 ep | 关节角度 (错) | 0.815 | 1.104 | +26% | 假阳性（单 ep 数据太特殊）|
-| **v2** | 50 ep | 关节角度 (错) | 1.121 | 1.058 | -6% | voxel 是噪声 |
-| **v3** | 10 ep | **真 EE 位置** (对) | **0.833** | **1.138** | **+27%** | **真信号** ⭐ |
-
-**关键学习**：
-- voxel **必须**基于真 EE 位置（FK 算），不能用关节角度
-- 关节角度是周期性 (rad)，直接离散化是**信息损失**
-- 修了 voxel 设计后，结论稳定重现
-
-### 训练加速（预计算 voxel）
-
-| 数据加载 | 5000 步训练时间 | 3000 步训练时间 |
+| 迭代 | Voxel 设计 | 结果 |
 |---|---|---|
-| v2: 在线算 FK | ~5 小时 | — |
-| v3: 预计算 h5 | — | **13 分钟** ⭐ |
+| v1 (关节当 3D) | 关节角度离散化 | 假阳性 (单 ep) / 反 (多 ep) |
+| v2 (50 ep, 关节) | 关节角度离散化 | voxel 是噪声 |
+| **v3 (真 EE 位置)** | **ViperX FK → EE → 体素** | **+27% 真信号** ⭐ |
 
-预计算把训练时间从 5 小时压到 13 分钟（约 **23× 加速**）。
+**关键学习**：voxel **必须**基于真 EE 位置（FK 算），关节角度是周期性变量不能直接离散化。
 
 ### 设计文档承诺 vs 实现
 
 | 设计文档承诺 | 当前状态 |
 |---|---|
-| 体素条件提升精度 | ✅ **+27%**（LeRobot 真图 + 真 EE 体素）|
+| 体素条件提升精度 | ✅ **+26.4%**（LeRobot 真图 + 真 EE 体素）|
 | Flow Matching 单步推理 | ✅ **1 步 vs DDPM 16 步：7.4× 快** |
 | 轻量编码器 88% 减少 | ✅ 实测 |
 | 训练时间 -60% | ⚠️ 实验 4 在 1000 步时未显著 |

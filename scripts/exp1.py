@@ -1,6 +1,6 @@
 """
-Fast Experiment 1: voxel ablation on pre-computed LeRobot Aloha data.
-使用预计算 h5 (FK 已算好, 训练时直接读).
+Experiment 1: voxel ablation on LeRobot Aloha real image data.
+Pre-computed voxels (FK + voxel in h5).
 """
 
 from __future__ import annotations
@@ -21,11 +21,34 @@ from torch.optim import AdamW
 from models import LightVoxelEncoder
 from models.flow_tdp import create_flow_tdp
 from data.lerobot_precomputed_dataset import LeRobotPrecomputedDataset
-from scripts.exp1_real_data import _safe_device, set_seed
+
+
+def _safe_device():
+    if not torch.cuda.is_available():
+        return torch.device("cpu")
+    try:
+        a = torch.randn(64, 64, device="cuda", requires_grad=True)
+        _ = (a @ a).sum()
+        torch.cuda.synchronize()
+        return torch.device("cuda")
+    except Exception:
+        return torch.device("cpu")
+
+
+def set_seed(seed: int = 42):
+    import random
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.manual_seed_all(seed)
+        except Exception:
+            pass
 
 
 def train_one_model(
-    model, encoder, dataset, *, steps, batch_size, lr, device, use_voxel, log_every=100,
+    model, encoder, dataset, *, steps, batch_size, lr, device, use_voxel, log_every=200,
 ):
     model.to(device).train()
     encoder.to(device).eval()
@@ -102,13 +125,13 @@ def evaluate_model(model, encoder, dataset, *, num_episodes, device, use_voxel):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--h5_path", default="D:/Desktop/github_project/CLR-VLMTDP/data/lerobot_precomputed/with_voxels.h5")
-    parser.add_argument("--steps", type=int, default=3000)
+    parser.add_argument("--steps", type=int, default=10000)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--eval_episodes", type=int, default=20)
-    parser.add_argument("--num_episodes", type=int, default=10)
+    parser.add_argument("--num_episodes", type=int, default=50)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--output", default="results/exp1_lerobot_v3.json")
+    parser.add_argument("--output", default="results/exp1.json")
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -116,9 +139,9 @@ def main():
     print(f"Device: {device}")
 
     print("=" * 70)
-    print("Experiment 1 v3: LeRobot Aloha PRE-COMPUTED voxels (FAST)")
-    print("=" * 70)
+    print(f"Experiment 1: LeRobot Aloha (pre-computed voxels)")
     print(f"  Steps: {args.steps}, batch: {args.batch_size}, num_episodes: {args.num_episodes}")
+    print("=" * 70)
 
     dataset = LeRobotPrecomputedDataset(
         h5_path=args.h5_path, num_episodes=args.num_episodes,
@@ -146,6 +169,7 @@ def main():
     results["with_voxel"] = {
         "final_loss": float(np.mean(losses_with[-100:])),
         "train_time_s": time_with,
+        "loss_curve": losses_with[::100],  # 下采样曲线
         **eval_with,
     }
 
@@ -163,6 +187,7 @@ def main():
     results["without_voxel"] = {
         "final_loss": float(np.mean(losses_without[-100:])),
         "train_time_s": time_without,
+        "loss_curve": losses_without[::100],
         **eval_without,
     }
 
@@ -179,6 +204,7 @@ def main():
           f"{results['without_voxel']['final_loss']-results['with_voxel']['final_loss']:+.4f}")
     print(f"  Train Time (s)    {time_with:.0f}          {time_without:.0f}          "
           f"{(time_without-time_with)/max(time_with,0.1)*100:+.0f}%")
+    print(f"  With-Voxel improvement: {delta_mse/eval_without['mse']*100:.1f}%")
 
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
