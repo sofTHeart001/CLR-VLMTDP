@@ -77,32 +77,49 @@ def resize_image(img: np.ndarray, target_size: tuple = (96, 96)) -> np.ndarray:
     return np.array(pil, dtype=np.uint8)
 
 
-def make_voxel_from_joints(joint_seq: np.ndarray, grid_size: int = 6) -> np.ndarray:
+def make_voxel_from_ee_path(
+    ee_positions: np.ndarray,
+    workspace_bounds: tuple = (-0.3, 0.0, 0.0, 0.3, 0.4, 0.4),
+    grid_size: int = 6,
+    interpolate: bool = True,
+    interp_step_m: float = 0.02,
+) -> np.ndarray:
     """
-    把关节序列编码成 6×6×6 voxel grid.
+    把 EE 位置序列编码成 6×6×6 voxel grid (按时序标记).
 
-    简化的方法: 把 7-D joint 序列 reduce 到 3-D (取前 3 dim 离散化).
-    这是 VLA 中常见的"无物理意义"voxel, 只为测试框架.
+    这才是 "VLM-TDP 体素轨迹" 的正确做法:
+    - 末端执行器的 3D 位置 (世界坐标)
+    - 经过的 cell 按时间顺序标记 1, 2, 3, ...
+    - 路径上的 cell 都被标记
+
+    Args:
+        ee_positions: (T, 3) EE 在 base 坐标系下的位置
+        workspace_bounds: (xmin, ymin, zmin, xmax, ymax, zmax)
+        grid_size: 每边 cell 数
+        interpolate: 是否插值 (让路径更密)
+        interp_step_m: 插值步长 (米)
     """
-    # joint_seq: (T, 7)
-    if len(joint_seq) < 2:
+    if len(ee_positions) < 2:
         return np.zeros((grid_size, grid_size, grid_size), dtype=np.int64)
 
-    # 用前 3 个关节当 3D 坐标 (简化, 但能给体素条件 grid)
-    coords = joint_seq[:, :3]  # (T, 3)
+    if interpolate:
+        from utils.trajectory_extraction import _interpolate_path
+        ee_positions = _interpolate_path(ee_positions, step_m=interp_step_m)
 
-    # 离散化到 6×6×6 grid
-    mins = coords.min(axis=0)
-    maxs = coords.max(axis=0)
-    ranges = maxs - mins
-    ranges[ranges == 0] = 1  # 避免除 0
-
-    normalized = (coords - mins) / ranges  # (T, 3) in [0, 1]
-    grid_indices = np.floor(normalized * (grid_size - 1e-6)).astype(int)  # (T, 3) in [0, grid_size-1]
-
+    xmin, ymin, zmin, xmax, ymax, zmax = workspace_bounds
     voxel = np.zeros((grid_size, grid_size, grid_size), dtype=np.int64)
-    for t, (i, j, k) in enumerate(grid_indices):
-        voxel[i, j, k] = t + 1  # 标记时序
+
+    for t, (x, y, z) in enumerate(ee_positions):
+        # 裁剪到工作空间
+        x = np.clip(x, xmin, xmax - 1e-9)
+        y = np.clip(y, ymin, ymax - 1e-9)
+        z = np.clip(z, zmin, zmax - 1e-9)
+        # 离散化
+        i = int((x - xmin) / (xmax - xmin) * (grid_size - 1e-9))
+        j = int((y - ymin) / (ymax - ymin) * (grid_size - 1e-9))
+        k = int((z - zmin) / (zmax - zmin) * (grid_size - 1e-9))
+        if voxel[i, j, k] == 0:
+            voxel[i, j, k] = t + 1  # 标记时序 (第一个到的 cell 标 1)
 
     return voxel
 
@@ -111,6 +128,9 @@ class LeRobotAlohaDataset(Dataset):
     """
     LeRobot aloha 数据集 adapter.
     返回 (image, voxel, action) per timestep.
+
+    把多个 parquet + 1 个 video 当作一个连续序列处理
+    (parquet 行和 video 帧 1:1 对应).
     """
 
     def __init__(
@@ -119,49 +139,66 @@ class LeRobotAlohaDataset(Dataset):
         image_size: tuple = (96, 96),
         prediction_horizon: int = 12,
         voxel_repr: str = "sequence",
-        num_episodes: int = 5,
+        num_episodes: int = 50,
     ):
         self.paths = get_default_aloha_paths(cache_dir)
         self.image_size = image_size
         self.prediction_horizon = prediction_horizon
         self.voxel_repr = voxel_repr
 
-        # 加载所有 parquet + 视频
-        self.episodes = []  # list of (parquet_df, video_frames, episode_id)
-        parquet_files = list_parquet_files(self.paths["parquet"])[:num_episodes]
-        video_files = list_video_files(self.paths["videos"])[:num_episodes]
+        parquet_files = list_parquet_files(self.paths["parquet"])
+        video_files = list_video_files(self.paths["videos"])
 
-        print(f"Loading {len(parquet_files)} episodes from LeRobot aloha...")
-        for i, (pq, vid) in enumerate(zip(parquet_files, video_files)):
-            try:
-                df = pd.read_parquet(pq)
-                frames = load_video_frames(vid)
-                # 视频可能比 parquet 长 (拼接多个 episode), 截到 parquet 长度
-                if len(frames) > len(df):
-                    frames = frames[: len(df)]
-                elif len(frames) < len(df):
-                    # 如果视频短了, 截断 df
-                    df = df.iloc[: len(frames)]
-                if len(df) < 2:
-                    print(f"  ep {i}: too few frames ({len(df)})")
-                    continue
-                self.episodes.append({
-                    "df": df,
-                    "frames": frames,
-                    "id": i,
-                    "length": len(df),
-                })
-            except Exception as e:
-                print(f"  ep {i}: failed ({e})")
+        print(f"Loading LeRobot aloha data ({len(parquet_files)} parquet files, {len(video_files)} video files)...")
+
+        # 合并所有 parquet
+        all_dfs = []
+        for pq in parquet_files:
+            df = pd.read_parquet(pq)
+            all_dfs.append(df)
+        combined_df = pd.concat(all_dfs, ignore_index=True)
+        print(f"  Combined parquet: {len(combined_df)} frames, {combined_df['episode_index'].nunique()} unique episodes")
+
+        if not video_files:
+            print("  No video files found")
+            return
+
+        vid = video_files[0]  # top camera (first available)
+        all_frames = load_video_frames(vid)
+        print(f"  Loaded video: {len(all_frames)} frames from {vid.name}")
+
+        # 截断到 parquet 长度
+        n = min(len(all_frames), len(combined_df))
+        all_frames = all_frames[:n]
+        combined_df = combined_df.iloc[:n].reset_index(drop=True)
+
+        # 把整个序列当作 1 个 entry
+        self.episodes = [{
+            "df": combined_df,
+            "frames": all_frames,
+            "id": "all",
+            "length": n,
+        }]
+
+        # 限制使用的 episode 数 (用 num_episodes 选前面 N 个 episode)
+        if num_episodes > 0 and num_episodes < combined_df['episode_index'].nunique():
+            # 找到 num_episodes 个 episode 包含的帧数
+            keep_eps = sorted(combined_df['episode_index'].unique())[:num_episodes]
+            mask = combined_df['episode_index'].isin(keep_eps)
+            n_keep = int(mask.sum())
+            self.episodes[0]["df"] = combined_df[mask].reset_index(drop=True)
+            self.episodes[0]["frames"] = all_frames[:n_keep]
+            self.episodes[0]["length"] = n_keep
+            print(f"  Filtered to {num_episodes} episodes = {n_keep} frames")
 
         # 建索引
-        self.index_map = []  # (episode_idx, timestep)
+        self.index_map = []
         for ei, ep in enumerate(self.episodes):
             usable = max(0, ep["length"] - prediction_horizon + 1)
             for t in range(usable):
                 self.index_map.append((ei, t))
 
-        print(f"  Loaded {len(self.episodes)} episodes, {len(self.index_map)} samples total")
+        print(f"  Final: {len(self.episodes)} entries, {len(self.index_map)} samples")
 
     def __len__(self):
         return len(self.index_map)
@@ -181,10 +218,21 @@ class LeRobotAlohaDataset(Dataset):
         # 取右臂 (索引 7-13)
         actions_right = actions_full[:, 7:14]  # (T, 7)
 
-        # Voxel: 用右臂 joint 序列
+        # Voxel: 用右臂 FK 算 EE 位置 → 离散化
         states_full = np.stack([np.array(s) for s in df["observation.state"].values])
-        right_arm_seq = states_full[:, 7:14]  # (T, 7)
-        voxel = make_voxel_from_joints(right_arm_seq)  # (6, 6, 6)
+        right_arm_joints = states_full[:, 7:13]  # (T, 6) — 拿前 6 维 (丢夹爪)
+        # FK → EE 位置 (T, 3)
+        from utils.viperx_fk import fk_viperx_batch
+        ee_positions = fk_viperx_batch(right_arm_joints)
+        # 用 EE 位置做 voxel
+        # Aloha sim 工作空间: x ∈ [-0.2, 0.3], y ∈ [0, 0.4], z ∈ [0, 0.4]
+        voxel = make_voxel_from_ee_path(
+            ee_positions,
+            workspace_bounds=(-0.2, 0.0, 0.0, 0.3, 0.4, 0.4),
+            grid_size=6,
+            interpolate=True,
+            interp_step_m=0.02,
+        )
 
         if self.voxel_repr == "sequence":
             voxel_t = torch.from_numpy(voxel).long()

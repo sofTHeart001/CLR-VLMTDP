@@ -1,0 +1,31 @@
+{
+  "config": {
+    "h5_path": "D:/Desktop/github_project/CLR-VLMTDP/data/lerobot_precomputed/with_voxels.h5",
+    "steps": 3000,
+    "batch_size": 64,
+    "lr": 0.0001,
+    "eval_episodes": 20,
+    "num_episodes": 10,
+    "seed": 42,
+    "output": "results/exp1_lerobot_v3.json"
+  },
+  "steps": 3000,
+  "with_voxel": {
+    "final_loss": 1.0075428432226181,
+    "train_time_s": 742.6806948184967,
+    "mse": 0.8327908679842949,
+    "inference_ms_mean": 16.385138034820557,
+    "num_evaluated": 20
+  },
+  "without_voxel": {
+    "final_loss": 1.0092711639404297,
+    "train_time_s": 801.2234835624695,
+    "mse": 1.1377202436327933,
+    "inference_ms_mean": 14.911067485809326,
+    "num_evaluated": 20
+  },
+  "summary": {
+    "delta_mse": 0.3049293756484984,
+    "voxel_helps": true
+  }
+}
